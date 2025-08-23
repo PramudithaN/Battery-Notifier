@@ -11,17 +11,20 @@ import android.util.Log
 
 class BatteryService : Service() {
 
+    // INSIDE BatteryService.kt
+
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
             val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
             val batteryPct = level * 100 / scale.toFloat()
 
-            Log.d("BatteryService", "Current Battery Level: $batteryPct%")
+            // It already reads from the settings file we just updated in MainActivity
+            val sharedPrefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            val notificationLevel = sharedPrefs.getInt("NOTIFICATION_LEVEL", 80)
 
-            if (batteryPct >= 80) {
-                Log.d("BatteryService", "BATTERY IS AT 80% OR HIGHER! SENDING NOTIFICATION.")
-                // --- SEND THE NOTIFICATION ---
+            // It correctly compares against the user's value
+            if (batteryPct >= notificationLevel) {
                 sendEightyPercentNotification(this@BatteryService)
             }
         }

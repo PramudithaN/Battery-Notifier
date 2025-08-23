@@ -1,76 +1,80 @@
 package com.pramuditha.batterynotifier
 
-import android.content.Context // NEW: Import for Context
+import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.widget.Button
+import android.widget.EditText
 import android.widget.TextView
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import android.Manifest
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
     private var isServiceRunning = false
 
-    private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            if (isGranted) { /* Permission granted */ } else { /* Permission denied */ }
-        }
+    // UI elements for the new feature
+    private lateinit var percentageInput: EditText
+    private lateinit var saveButton: Button
+
+    // UI elements for the old feature
+    private lateinit var statusText: TextView
+    private lateinit var toggleButton: Button
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        askNotificationPermission()
+        // Initialize all UI elements
+        percentageInput = findViewById(R.id.percentageInput)
+        saveButton = findViewById(R.id.saveButton)
+        statusText = findViewById(R.id.statusText)
+        toggleButton = findViewById(R.id.toggleButton)
 
-        val statusText = findViewById<TextView>(R.id.statusText)
-        val toggleButton = findViewById<Button>(R.id.toggleButton)
+        // --- LOGIC FOR CUSTOM PERCENTAGE ---
+        val settingsPrefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        val savedPercentage = settingsPrefs.getInt("NOTIFICATION_LEVEL", 80)
+        percentageInput.setText(savedPercentage.toString())
 
-        // --- NEW: Read the saved state when the app starts ---
-        val sharedPrefs = getSharedPreferences("app_state", Context.MODE_PRIVATE)
-        isServiceRunning = sharedPrefs.getBoolean("SERVICE_STATE", false)
-        updateUI(statusText, toggleButton) // Update UI based on saved state
+        saveButton.setOnClickListener {
+            val inputText = percentageInput.text.toString()
+            if (inputText.isNotEmpty()) {
+                val percentage = inputText.toInt()
+                settingsPrefs.edit().putInt("NOTIFICATION_LEVEL", percentage).apply()
+                Toast.makeText(this, "Notification level saved: $percentage%", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Please enter a value", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // --- LOGIC FOR START/STOP MONITORING AND STATE SAVING ---
+        val statePrefs = getSharedPreferences("app_state", Context.MODE_PRIVATE)
+        isServiceRunning = statePrefs.getBoolean("SERVICE_STATE", false)
+        updateMonitoringUI() // Update UI based on saved state
 
         toggleButton.setOnClickListener {
+            isServiceRunning = !isServiceRunning // Toggle the state
             if (isServiceRunning) {
-                // --- STOP ---
-                isServiceRunning = false
-                val serviceIntent = Intent(this, BatteryService::class.java)
-                stopService(serviceIntent)
+                // If we are now running, start the service
+                startService(Intent(this, BatteryService::class.java))
             } else {
-                // --- START ---
-                isServiceRunning = true
-                val serviceIntent = Intent(this, BatteryService::class.java)
-                startService(serviceIntent)
+                // If we are now stopped, stop the service
+                stopService(Intent(this, BatteryService::class.java))
             }
-            // --- NEW: Save the new state every time the button is clicked ---
-            sharedPrefs.edit().putBoolean("SERVICE_STATE", isServiceRunning).apply()
-            updateUI(statusText, toggleButton) // Update UI to reflect the change
+            // Save the new state and update the UI
+            statePrefs.edit().putBoolean("SERVICE_STATE", isServiceRunning).apply()
+            updateMonitoringUI()
         }
     }
 
-    // --- NEW: Created a helper function to avoid repeating UI code ---
-    private fun updateUI(statusText: TextView, toggleButton: Button) {
+    private fun updateMonitoringUI() {
         if (isServiceRunning) {
             toggleButton.text = "Stop Monitoring"
             statusText.text = "Monitoring is Active"
         } else {
             toggleButton.text = "Start Monitoring"
             statusText.text = "Monitoring is Inactive"
-        }
-    }
-
-    private fun askNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
         }
     }
 }
