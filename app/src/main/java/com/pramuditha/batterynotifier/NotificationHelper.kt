@@ -6,13 +6,10 @@ import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 
-// A unique ID for our notification channel
 private const val CHANNEL_ID = "battery_channel"
-// A unique ID for the notification itself
 private const val NOTIFICATION_ID = 1
 
 fun createNotificationChannel(context: Context) {
-    // Notification Channels are only needed for Android 8.0 (API 26) and higher
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val name = "Battery Notifications"
         val descriptionText = "Notifications for battery charge level"
@@ -20,24 +17,32 @@ fun createNotificationChannel(context: Context) {
         val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
             description = descriptionText
         }
-        // Register the channel with the system
         val notificationManager: NotificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
     }
 }
 
-fun sendEightyPercentNotification(context: Context) {
+// RENAMED and UPDATED the function
+fun sendTargetReachedNotification(context: Context) {
+    // --- THIS IS THE NEW LOGIC ---
+    // 1. Open the settings file to find the user's preference
+    val sharedPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+    val notificationLevel = sharedPrefs.getInt("NOTIFICATION_LEVEL", 80)
+
+    // 2. Create a dynamic notification text using the saved value
+    val notificationText = "Battery has reached $notificationLevel%. Please unplug the charger."
+
     val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_lock_idle_charging) // A default battery icon
+        .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
         .setContentTitle("Battery Charged!")
-        .setContentText("Battery has reached 80%. Please unplug the charger.")
+        // 3. Use the new dynamic text
+        .setContentText(notificationText)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
-        .setSilent(false) // Make sure it makes a sound
+        .setSilent(false)
 
     val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-    // Send the notification
     notificationManager.notify(NOTIFICATION_ID, builder.build())
 }

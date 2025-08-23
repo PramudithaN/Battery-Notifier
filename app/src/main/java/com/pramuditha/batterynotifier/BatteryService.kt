@@ -25,7 +25,7 @@ class BatteryService : Service() {
 
             // It correctly compares against the user's value
             if (batteryPct >= notificationLevel) {
-                sendEightyPercentNotification(this@BatteryService)
+                sendTargetReachedNotification(this@BatteryService)
             }
         }
     }
