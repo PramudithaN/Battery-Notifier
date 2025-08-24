@@ -25,7 +25,7 @@ fun createNotificationChannel(context: Context) {
         notificationManager.createNotificationChannel(channel)
     }
 }
-
+//
 fun sendTargetReachedNotification(context: Context) {
     // --- NEW: Create an Intent to launch MainActivity ---
     val fullScreenIntent = Intent(context, MainActivity::class.java)
