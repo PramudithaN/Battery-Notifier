@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.slider.Slider
 import androidx.core.content.ContextCompat
+import android.graphics.Color
 
 class MainActivity : AppCompatActivity() {
 
@@ -103,11 +104,13 @@ class MainActivity : AppCompatActivity() {
             toggleButton.text = "Stop Monitoring"
             // Set the button color to red
             toggleButton.backgroundTintList = ContextCompat.getColorStateList(this, R.color.red_stop)
+            toggleButton.setTextColor(Color.WHITE)
             statusText.text = "Monitoring is Active"
         } else {
             toggleButton.text = "Start Monitoring"
             // Revert the button color to the theme's primary color
             toggleButton.backgroundTintList = ContextCompat.getColorStateList(this, R.color.purple_start)
+            toggleButton.setTextColor(Color.WHITE)
             statusText.text = "Monitoring is Inactive"
         }
     }
