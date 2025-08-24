@@ -3,11 +3,13 @@ package com.pramuditha.batterynotifier
 import android.content.*
 import android.os.BatteryManager
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.slider.Slider
+import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
 
@@ -51,8 +53,14 @@ class MainActivity : AppCompatActivity() {
         updateMonitoringUI()
 
         // --- UI Listeners ---
-        percentageSlider.addOnChangeListener { _, value, _ ->
+        // Listener to update the text as the slider moves
+        percentageSlider.addOnChangeListener { slider, value, fromUser ->
             sliderValueText.text = "${value.toInt()}%"
+
+            // Add haptic feedback when the user moves the slider
+            if (fromUser) {
+                slider.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            }
         }
 
         saveButton.setOnClickListener {
@@ -93,9 +101,13 @@ class MainActivity : AppCompatActivity() {
     private fun updateMonitoringUI() {
         if (isServiceRunning) {
             toggleButton.text = "Stop Monitoring"
+            // Set the button color to red
+            toggleButton.backgroundTintList = ContextCompat.getColorStateList(this, R.color.red_stop)
             statusText.text = "Monitoring is Active"
         } else {
             toggleButton.text = "Start Monitoring"
+            // Revert the button color to the theme's primary color
+            toggleButton.backgroundTintList = ContextCompat.getColorStateList(this, R.color.purple_start)
             statusText.text = "Monitoring is Inactive"
         }
     }
