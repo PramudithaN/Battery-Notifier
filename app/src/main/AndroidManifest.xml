@@ -22,6 +22,16 @@
             </intent-filter>
         </activity>
         <service android:name=".BatteryService" />
+
+        <receiver
+            android:name=".PowerConnectionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
     </application>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>
