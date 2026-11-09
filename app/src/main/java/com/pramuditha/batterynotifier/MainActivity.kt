@@ -1,16 +1,23 @@
 package com.pramuditha.batterynotifier
 
-import android.content.*
+import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.slider.Slider
 import androidx.core.content.ContextCompat
-import android.graphics.Color
+import com.google.android.material.slider.Slider
 
 class MainActivity : AppCompatActivity() {
 
@@ -26,13 +33,38 @@ class MainActivity : AppCompatActivity() {
     // --- State Variables ---
     private var isServiceRunning = false
 
-    // A receiver to get live battery updates while the app is open
+    // Runtime notification permission launcher for Android 13+ (API 33+)
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            startMonitoringService()
+        } else {
+            Toast.makeText(
+                this,
+                "Notification permission is required to alert you when your target battery level is reached.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    // Receiver to update battery level in real-time while the screen is open
     private val batteryInfoReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
             val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-            val batteryPct = level * 100 / scale.toFloat()
-            currentBatteryLevelText.text = "${batteryPct.toInt()}%"
+            if (level >= 0 && scale > 0) {
+                val batteryPct = (level * 100 / scale.toFloat()).toInt()
+                currentBatteryLevelText.text = "$batteryPct%"
+            }
+        }
+    }
+
+    // Receiver to keep UI in sync when service state changes (e.g. stopped from notification)
+    private val serviceStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            syncServiceState()
+            updateMonitoringUI()
         }
     }
 
@@ -40,47 +72,98 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Initialize all UI elements
+        // Initialize UI components
         initializeViews()
 
-        // --- Load and Display Saved Settings ---
+        // Create notification channels early
+        NotificationHelper.createNotificationChannels(this)
+
+        // Load saved target percentage
         val settingsPrefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         val savedPercentage = settingsPrefs.getInt("NOTIFICATION_LEVEL", 80)
         updateSettingsUI(savedPercentage)
 
-        // --- Load and Display Saved Monitoring State ---
-        val statePrefs = getSharedPreferences("app_state", Context.MODE_PRIVATE)
-        isServiceRunning = statePrefs.getBoolean("SERVICE_STATE", false)
+        // Load saved monitoring state
+        syncServiceState()
         updateMonitoringUI()
 
-        // --- UI Listeners ---
-        // Listener to update the text as the slider moves
-        percentageSlider.addOnChangeListener { slider, value, fromUser ->
+        // Slider change listener with haptic feedback
+        percentageSlider.addOnChangeListener { _, value, fromUser ->
             sliderValueText.text = "${value.toInt()}%"
-
-            // Add haptic feedback when the user moves the slider
             if (fromUser) {
-                slider.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                percentageSlider.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             }
         }
 
+        // Save target level button
         saveButton.setOnClickListener {
             val percentage = percentageSlider.value.toInt()
             settingsPrefs.edit().putInt("NOTIFICATION_LEVEL", percentage).apply()
             targetLevelText.text = "Target: $percentage%"
-            Toast.makeText(this, "Notification level saved: $percentage%", Toast.LENGTH_SHORT).show()
+
+            // If the service is running, notify it to reload the new threshold
+            if (isServiceRunning) {
+                val refreshIntent = Intent(this, BatteryService::class.java)
+                ContextCompat.startForegroundService(this, refreshIntent)
+            }
+
+            Toast.makeText(this, "Target level saved: $percentage%", Toast.LENGTH_SHORT).show()
         }
 
+        // Toggle button: Start or Stop Monitoring
         toggleButton.setOnClickListener {
-            isServiceRunning = !isServiceRunning // Toggle the state
             if (isServiceRunning) {
-                startService(Intent(this, BatteryService::class.java))
+                stopMonitoringService()
             } else {
-                stopService(Intent(this, BatteryService::class.java))
+                requestAndStartMonitoring()
             }
-            statePrefs.edit().putBoolean("SERVICE_STATE", isServiceRunning).apply()
-            updateMonitoringUI()
         }
+    }
+
+    private fun requestAndStartMonitoring() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+        }
+        startMonitoringService()
+    }
+
+    private fun startMonitoringService() {
+        val serviceIntent = Intent(this, BatteryService::class.java).apply {
+            action = BatteryService.ACTION_START_MONITORING
+        }
+        ContextCompat.startForegroundService(this, serviceIntent)
+        isServiceRunning = true
+        saveServiceState(true)
+        updateMonitoringUI()
+        Toast.makeText(this, "Monitoring started", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopMonitoringService() {
+        val serviceIntent = Intent(this, BatteryService::class.java).apply {
+            action = BatteryService.ACTION_STOP_MONITORING
+        }
+        startService(serviceIntent)
+        isServiceRunning = false
+        saveServiceState(false)
+        updateMonitoringUI()
+        Toast.makeText(this, "Monitoring stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun syncServiceState() {
+        val statePrefs = getSharedPreferences("app_state", Context.MODE_PRIVATE)
+        isServiceRunning = BatteryService.isServiceRunning || statePrefs.getBoolean("SERVICE_STATE", false)
+    }
+
+    private fun saveServiceState(active: Boolean) {
+        val statePrefs = getSharedPreferences("app_state", Context.MODE_PRIVATE)
+        statePrefs.edit().putBoolean("SERVICE_STATE", active).apply()
     }
 
     private fun initializeViews() {
@@ -102,13 +185,11 @@ class MainActivity : AppCompatActivity() {
     private fun updateMonitoringUI() {
         if (isServiceRunning) {
             toggleButton.text = "Stop Monitoring"
-            // Set the button color to red
             toggleButton.backgroundTintList = ContextCompat.getColorStateList(this, R.color.red_stop)
             toggleButton.setTextColor(Color.WHITE)
             statusText.text = "Monitoring is Active"
         } else {
             toggleButton.text = "Start Monitoring"
-            // Revert the button color to the theme's primary color
             toggleButton.backgroundTintList = ContextCompat.getColorStateList(this, R.color.purple_start)
             toggleButton.setTextColor(Color.WHITE)
             statusText.text = "Monitoring is Inactive"
@@ -117,11 +198,27 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        syncServiceState()
+        updateMonitoringUI()
+
         registerReceiver(batteryInfoReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
+        val stateFilter = IntentFilter(BatteryService.ACTION_STATE_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(serviceStateReceiver, stateFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(serviceStateReceiver, stateFilter)
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        unregisterReceiver(batteryInfoReceiver)
+        try {
+            unregisterReceiver(batteryInfoReceiver)
+        } catch (_: Exception) {}
+
+        try {
+            unregisterReceiver(serviceStateReceiver)
+        } catch (_: Exception) {}
     }
 }
